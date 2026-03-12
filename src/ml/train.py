@@ -9,7 +9,7 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 
-from src.data.data_loader import PantanalDataset
+from src.data.data_loader import DeepWetlandsDataset
 from src.ml.efficientnet_b0 import DeepWetlandsModel
 from src.ml.training_logger import TrainingLogger
 
@@ -86,8 +86,8 @@ def build_loaders(base_dir, batch_size, num_workers):
     print(f"Train: {len(train_df)} samples | Val: {len(val_df)} samples")
 
     data_dir      = os.path.join(base_dir, "train_audio")
-    train_dataset = PantanalDataset(train_df, data_dir, label_map, is_train=True)
-    val_dataset   = PantanalDataset(val_df,   data_dir, label_map, is_train=False)
+    train_dataset = DeepWetlandsDataset(train_df, data_dir, label_map, is_train=True)
+    val_dataset   = DeepWetlandsDataset(val_df,   data_dir, label_map, is_train=False)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, pin_memory=True)

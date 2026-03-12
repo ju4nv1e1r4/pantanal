@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 import soundfile as sf
 
 
-class PantanalDataset(Dataset):
+class DeepWetlandsDataset(Dataset):
     def __init__(self, df, data_dir, label_map, target_sample_rate=32000, duration=5, is_train=True):
         """
         Dataset for the BirdCLEF+ Pantanal 2026 competition.
@@ -96,7 +96,7 @@ def get_dataloader(csv_path, taxonomy_path, data_dir, batch_size=32, is_train=Tr
     classes = sorted(taxonomy['primary_label'].unique())
     label_map = {label: i for i, label in enumerate(classes)}
     
-    dataset = PantanalDataset(df, data_dir, label_map, is_train=is_train)
+    dataset = DeepWetlandsDataset(df, data_dir, label_map, is_train=is_train)
     
     loader = DataLoader(
         dataset, 

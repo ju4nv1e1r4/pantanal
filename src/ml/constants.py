@@ -258,7 +258,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <div class="hero">
   <div class="hero-label">BirdCLEF+ Pantanal 2026</div>
-  <h1>Pantanal<span>Pulse</span><br>Training Report</h1>
+  <h1>DeepWetlands<span>Pulse</span><br>Training Report</h1>
   <div class="hero-meta">
     Generated at {timestamp} &nbsp;·&nbsp;
     {num_epochs} epochs &nbsp;·&nbsp;
