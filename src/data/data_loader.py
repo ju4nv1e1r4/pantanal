@@ -53,9 +53,11 @@ class PantanalDataset(Dataset):
 
         try:
             data, sample_rate = sf.read(file_path, dtype='float32')
-            waveform = torch.tensor(data).T
+            waveform = torch.tensor(data.copy())
             if waveform.ndim == 1:
-                waveform = waveform.unsqueeze(0)
+                waveform = waveform.unsqueeze(0)        # Mono: [N] → [1, N]
+            else:
+                waveform = waveform.permute(1, 0)       # Stereo: [N, C] → [C, N]
         except Exception as e:
             print(f"Error loading file: {file_path}")
             raise e
