@@ -75,7 +75,7 @@ def main():
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, DEVICE)
         scheduler.step()
         
-        print(f"Loss de Treino: {train_loss:.4f}")
+        print(f"Loops: {train_loss:.4f}")
         
         # checkpoint
         torch.save({
