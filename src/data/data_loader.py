@@ -109,7 +109,7 @@ def get_dataloader(csv_path, taxonomy_path, data_dir, batch_size=32, is_train=Tr
     return loader, label_map
 
 if __name__ == "__main__":
-    BASE_DIR = "/home/juan/x/pantanal/data" or "../data"
+    BASE_DIR = "data"
     
     loader, l_map = get_dataloader(
         csv_path=os.path.join(BASE_DIR, "train.csv"),
