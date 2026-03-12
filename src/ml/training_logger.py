@@ -177,7 +177,7 @@ class TrainingLogger:
         ax1.plot(epochs, train_loss, color=COLORS["train"], lw=2.5, marker="o", ms=5, label="Train Loss")
         ax1.plot(epochs, val_loss,   color=COLORS["val"],   lw=2.5, marker="o", ms=5, label="Val Loss")
         ax1.fill_between(epochs, train_loss, val_loss, alpha=0.08, color=COLORS["accent"])
-        ax1.set_title(f"Loss per Epoch for {self.model}", color=COLORS["text"], fontsize=13, pad=12)
+        ax1.set_title(f"Loss per Epoch [{self.model}]", color=COLORS["text"], fontsize=13, pad=12)
         ax1.set_xlabel("Epoch", color=COLORS["subtext"])
         ax1.set_ylabel("Loss", color=COLORS["subtext"])
         ax1.legend(facecolor=COLORS["border"], labelcolor=COLORS["text"])
@@ -190,7 +190,7 @@ class TrainingLogger:
             ax2.set_facecolor(COLORS["surface"])
             ax2.plot(epochs, macro_auc, color=COLORS["good"], lw=2.5, marker="o", ms=5, label="Macro-AUC")
             ax2.set_ylim(0, 1)
-            ax2.set_title(f"Macro-AUC per Epoch for {self.model}", color=COLORS["text"], fontsize=13, pad=12)
+            ax2.set_title(f"Macro-AUC per Epoch [{self.model}]", color=COLORS["text"], fontsize=13, pad=12)
             ax2.set_xlabel("Epoch", color=COLORS["subtext"])
             ax2.set_ylabel("AUC", color=COLORS["subtext"])
             ax2.legend(facecolor=COLORS["border"], labelcolor=COLORS["text"])
@@ -199,7 +199,7 @@ class TrainingLogger:
                 spine.set_edgecolor(COLORS["border"])
 
         fig.tight_layout(pad=2.0)
-        path = self.output_dir / "loss_curve.png" # TODO: in future, model_name for each .png, .log, and .html to easily identify.
+        path = self.output_dir / f"{self.model}_loss_curve.png" 
         fig.savefig(path, dpi=PLOT_DPI, bbox_inches="tight", facecolor=COLORS["bg"])
         plt.close(fig)
         self.log(f"Plot saved on: {path}")
@@ -224,7 +224,7 @@ class TrainingLogger:
         bars = ax.barh(labels, aucs, color=bar_colors, edgecolor=COLORS["border"], height=0.65)
         ax.axvline(x=last["macro_auc"] or 0.5, color=COLORS["accent"], lw=1.5, linestyle="--", label=f'Macro-AUC: {last["macro_auc"]:.4f}')
         ax.set_xlim(0, 1)
-        ax.set_title(f"Top-{TOP_K_ERRORS} Worst AUC per labels (Epoch {last['epoch']}) for {self.model}", color=COLORS["text"], fontsize=13, pad=12)
+        ax.set_title(f"Top-{TOP_K_ERRORS} Worst AUC per labels [{self.model}] (Epoch {last['epoch']})", color=COLORS["text"], fontsize=13, pad=12)
         ax.set_xlabel("AUC", color=COLORS["subtext"])
         ax.legend(facecolor=COLORS["border"], labelcolor=COLORS["text"])
         ax.tick_params(colors=COLORS["subtext"])
@@ -236,7 +236,7 @@ class TrainingLogger:
                     f"{auc:.3f}", va="center", color=COLORS["text"], fontsize=8)
 
         fig.tight_layout(pad=2.0)
-        path = self.output_dir / "top_k_errors.png"
+        path = self.output_dir / f"{self.model}_top_k_errors.png"
         fig.savefig(path, dpi=PLOT_DPI, bbox_inches="tight", facecolor=COLORS["bg"])
         plt.close(fig)
         self.log(f"Plot saved on: {path}")
@@ -251,7 +251,7 @@ class TrainingLogger:
         ax.set_facecolor(COLORS["surface"])
         ax.fill_between(epochs, mbs, alpha=0.3, color=COLORS["accent"])
         ax.plot(epochs, mbs, color=COLORS["accent"], lw=2.5, marker="o", ms=5)
-        ax.set_title("GPU memory usage per Epoch", color=COLORS["text"], fontsize=13, pad=12)
+        ax.set_title(f"GPU memory usage per Epoch [{self.model}]", color=COLORS["text"], fontsize=13, pad=12)
         ax.set_xlabel("Epoch", color=COLORS["subtext"])
         ax.set_ylabel("MB allocated", color=COLORS["subtext"])
         ax.tick_params(colors=COLORS["subtext"])
@@ -259,7 +259,7 @@ class TrainingLogger:
             spine.set_edgecolor(COLORS["border"])
 
         fig.tight_layout(pad=2.0)
-        path = self.output_dir / "gpu_memory.png"
+        path = self.output_dir / f"{self.model}_gpu_memory.png"
         fig.savefig(path, dpi=PLOT_DPI, bbox_inches="tight", facecolor=COLORS["bg"])
         plt.close(fig)
         self.log(f"Plot saved on: {path}")
@@ -324,10 +324,14 @@ class TrainingLogger:
             best_macro_auc=best_macro_auc_val,
             avg_time_epoch=self._fmt_time(total_time / len(self.history)),
             rows=rows,
-            worst_classes_section=worst_classes_section
+            worst_classes_section=worst_classes_section,
+            model_name=self.model,
+            img_loss_curve=f"{self.model}_loss_curve.png",
+            img_top_k=f"{self.model}_top_k_errors.png",
+            img_gpu=f"{self.model}_gpu_memory.png"
         )
 
-        path = self.output_dir / "report.html"
+        path = self.output_dir / f"{self.model}_report.html"
         path.write_text(html, encoding="utf-8")
         self.log(f"HTML Report saved: {path}")
 
