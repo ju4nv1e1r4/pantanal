@@ -56,7 +56,7 @@ cover/
 *.pot
 
 # Django stuff:
-*.log
+#*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -222,3 +222,5 @@ data/train_soundscapes
 data/*.zip
 data/*.csv
 data/*.txt
+*.png
+models/
