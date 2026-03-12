@@ -59,7 +59,8 @@ COLORS = {
 
 
 class TrainingLogger:
-    def __init__(self, label_map: dict, output_dir: str = "logs/run"):
+    def __init__(self, label_map: dict, output_dir: str = "logs/run", model_name = "convnext_nano"):
+        self.model = model_name
         self.label_map    = label_map
         self.idx_to_label = {v: k for k, v in label_map.items()}
         self.output_dir   = Path(output_dir)
@@ -90,7 +91,7 @@ class TrainingLogger:
             self.console = Console()
 
         self.log(f"TrainingLogger started -> {os.path.relpath(self.output_dir)}")
-        self.log(f"Classes: {len(label_map)} | Timestamp: {datetime.datetime.now().isoformat()}")
+        self.log(f"Classes: {len(label_map)} | Timestamp: {datetime.datetime.now().isoformat()} | Model: {self.model}")
 
     # called at the end of each epoch on train script
     def log_epoch(
@@ -107,6 +108,7 @@ class TrainingLogger:
         macro_auc, per_class_auc = self._compute_auc(val_preds, val_targets)
 
         record = {
+            "model_name":    self.model,
             "epoch":         epoch,
             "train_loss":    round(train_loss, 6),
             "val_loss":      round(val_loss, 6),
@@ -123,7 +125,7 @@ class TrainingLogger:
     # called when the training has finished and generate all artifacts
     def finalize(self):
         total_time = time.time() - self.start_time
-        self.log(f"\nTraining finished in {self._fmt_time(total_time)}")
+        self.log(f"\nTraining finished in {self._fmt_time(total_time)} for {self.model}")
 
         self._plot_loss_curve()
         self._plot_top_k_errors()
@@ -175,7 +177,7 @@ class TrainingLogger:
         ax1.plot(epochs, train_loss, color=COLORS["train"], lw=2.5, marker="o", ms=5, label="Train Loss")
         ax1.plot(epochs, val_loss,   color=COLORS["val"],   lw=2.5, marker="o", ms=5, label="Val Loss")
         ax1.fill_between(epochs, train_loss, val_loss, alpha=0.08, color=COLORS["accent"])
-        ax1.set_title("Loss per Epoch", color=COLORS["text"], fontsize=13, pad=12)
+        ax1.set_title(f"Loss per Epoch for {self.model}", color=COLORS["text"], fontsize=13, pad=12)
         ax1.set_xlabel("Epoch", color=COLORS["subtext"])
         ax1.set_ylabel("Loss", color=COLORS["subtext"])
         ax1.legend(facecolor=COLORS["border"], labelcolor=COLORS["text"])
@@ -188,7 +190,7 @@ class TrainingLogger:
             ax2.set_facecolor(COLORS["surface"])
             ax2.plot(epochs, macro_auc, color=COLORS["good"], lw=2.5, marker="o", ms=5, label="Macro-AUC")
             ax2.set_ylim(0, 1)
-            ax2.set_title("Macro-AUC per Epoch", color=COLORS["text"], fontsize=13, pad=12)
+            ax2.set_title(f"Macro-AUC per Epoch for {self.model}", color=COLORS["text"], fontsize=13, pad=12)
             ax2.set_xlabel("Epoch", color=COLORS["subtext"])
             ax2.set_ylabel("AUC", color=COLORS["subtext"])
             ax2.legend(facecolor=COLORS["border"], labelcolor=COLORS["text"])
@@ -197,7 +199,7 @@ class TrainingLogger:
                 spine.set_edgecolor(COLORS["border"])
 
         fig.tight_layout(pad=2.0)
-        path = self.output_dir / "loss_curve.png"
+        path = self.output_dir / "loss_curve.png" # TODO: in future, model_name for each .png, .log, and .html to easily identify.
         fig.savefig(path, dpi=PLOT_DPI, bbox_inches="tight", facecolor=COLORS["bg"])
         plt.close(fig)
         self.log(f"Plot saved on: {path}")
@@ -222,7 +224,7 @@ class TrainingLogger:
         bars = ax.barh(labels, aucs, color=bar_colors, edgecolor=COLORS["border"], height=0.65)
         ax.axvline(x=last["macro_auc"] or 0.5, color=COLORS["accent"], lw=1.5, linestyle="--", label=f'Macro-AUC: {last["macro_auc"]:.4f}')
         ax.set_xlim(0, 1)
-        ax.set_title(f"Top-{TOP_K_ERRORS} Worst AUC per labels (Epoch {last['epoch']})", color=COLORS["text"], fontsize=13, pad=12)
+        ax.set_title(f"Top-{TOP_K_ERRORS} Worst AUC per labels (Epoch {last['epoch']}) for {self.model}", color=COLORS["text"], fontsize=13, pad=12)
         ax.set_xlabel("AUC", color=COLORS["subtext"])
         ax.legend(facecolor=COLORS["border"], labelcolor=COLORS["text"])
         ax.tick_params(colors=COLORS["subtext"])
@@ -356,6 +358,7 @@ class TrainingLogger:
         table.add_column("Metric",    style="cyan", width=28)
         table.add_column("Value",      style="bold white", justify="right")
 
+        table.add_row("Architecture",          self.model)
         table.add_row("Trained Epochs",        str(len(self.history)))
         table.add_row("Best Val Loss",          f"{best['val_loss']:.4f}  (epoch {best['epoch']})")
         table.add_row("Last Macro-AUC",         f"{last['macro_auc']:.4f}" if last["macro_auc"] else "—")
