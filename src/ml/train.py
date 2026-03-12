@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 
 from src.data.data_loader import DeepWetlandsDataset
-from src.ml.efficientnet_b0 import DeepWetlandsModel
+from src.ml.model import DeepWetlandsModel
 from src.ml.training_logger import TrainingLogger
 from src.ml.audio_transform import GPUAudioTransform
 
@@ -134,21 +134,21 @@ def build_loaders(base_dir, batch_size, num_workers):
 def main():
     BASE_DIR    = "data"
     EPOCHS      = 30
-    BATCH_SIZE  = 64
-    ACCUM_STEPS = 1
+    BATCH_SIZE  = 32
+    ACCUM_STEPS = 2
     LR          = 1e-3
     NUM_WORKERS = 2
-    RUN_NAME    = "run_003"
+    RUN_NAME    = "run_004"
     
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on: {DEVICE}")
 
-    cudnn.benchmark = True 
+    cudnn.benchmark = True
 
     train_loader, val_loader, label_map = build_loaders(BASE_DIR, BATCH_SIZE, NUM_WORKERS)
     print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    model = DeepWetlandsModel(model_name='efficientnet_b0', num_classes=len(label_map))
+    model = DeepWetlandsModel(model_name='convnext_nano', num_classes=len(label_map))
     model.to(DEVICE)
     
     audio_transform = GPUAudioTransform().to(DEVICE)
@@ -159,7 +159,7 @@ def main():
     
     scaler = GradScaler("cuda")
 
-    logger = TrainingLogger(label_map, output_dir=f"logs/{RUN_NAME}")
+    logger = TrainingLogger(model_name="convnext_nano", label_map=label_map, output_dir=f"logs/{RUN_NAME}")
 
     best_val_loss = float("inf")
 
