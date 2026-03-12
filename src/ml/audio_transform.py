@@ -1,4 +1,5 @@
 import torchaudio.transforms as T
+import torch.nn as nn
 
 class GPUAudioTransform(nn.Module):
     def __init__(self, target_sample_rate=32000):
