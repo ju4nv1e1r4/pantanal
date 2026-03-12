@@ -2,24 +2,15 @@ import os
 import pandas as pd
 import numpy as np
 import torch
-import torchaudio
 import torchaudio.transforms as T
 from torch.utils.data import Dataset, DataLoader
 import soundfile as sf
-
 
 class DeepWetlandsDataset(Dataset):
     def __init__(self, df, data_dir, label_map, target_sample_rate=32000, duration=5, is_train=True):
         """
         Dataset for the BirdCLEF+ Pantanal 2026 competition.
-        
-        Args:
-            df: DataFrame with metadata (train.csv).
-            data_dir: Path to the 'train_audio' folder.
-            label_map: Dictionary mapping 'primary_label' to index (0-233).
-            target_sample_rate: Competition fixed sampling rate (32kHz).
-            duration: Duration in seconds for each sample.
-            is_train: Defines if data augmentation is applied.
+        (CPU Light Version: Spectrograms are generated on the GPU)
         """
         self.df = df
         self.data_dir = data_dir
@@ -28,21 +19,6 @@ class DeepWetlandsDataset(Dataset):
         self.duration = duration
         self.num_samples = target_sample_rate * duration
         self.is_train = is_train
-
-        # Fixed transformations: MelSpectrogram
-        self.mel_spectrogram = T.MelSpectrogram(
-            sample_rate=self.target_sample_rate,
-            n_fft=2048,
-            hop_length=512,
-            n_mels=128,
-            f_min=0,
-            f_max=16000
-        )
-        self.db_transform = T.AmplitudeToDB()
-
-        # Augmentations via Torchaudio (SpecAugment)
-        self.time_mask = T.TimeMasking(time_mask_param=30)
-        self.freq_mask = T.FrequencyMasking(freq_mask_param=15)
 
     def __len__(self):
         return len(self.df)
@@ -54,13 +30,17 @@ class DeepWetlandsDataset(Dataset):
         try:
             data, sample_rate = sf.read(file_path, dtype='float32')
             waveform = torch.tensor(data.copy())
+            
             if waveform.ndim == 1:
                 waveform = waveform.unsqueeze(0)        # Mono: [N] -> [1, N]
             else:
                 waveform = waveform.permute(1, 0)       # Stereo: [N, C] -> [C, N]
+                waveform = waveform.mean(dim=0, keepdim=True)
+                
         except Exception as e:
             print(f"Error loading file: {file_path}")
-            raise e
+            waveform = torch.zeros((1, self.num_samples))
+            sample_rate = self.target_sample_rate
 
         if sample_rate != self.target_sample_rate:
             resampler = T.Resample(sample_rate, self.target_sample_rate)
@@ -76,18 +56,11 @@ class DeepWetlandsDataset(Dataset):
             padding = self.num_samples - waveform.shape[1]
             waveform = torch.nn.functional.pad(waveform, (0, padding))
 
-        spec = self.mel_spectrogram(waveform)
-        spec = self.db_transform(spec)
-
-        if self.is_train:
-            spec = self.freq_mask(spec)
-            spec = self.time_mask(spec)
-
         label_idx = self.label_map[row['primary_label']]
         target = torch.zeros(len(self.label_map))
         target[label_idx] = 1.0
 
-        return spec, target
+        return waveform, target
 
 def get_dataloader(csv_path, taxonomy_path, data_dir, batch_size=32, is_train=True, num_workers=4):
     df = pd.read_csv(csv_path)
@@ -119,7 +92,7 @@ if __name__ == "__main__":
         num_workers=0
     )
 
-    specs, targets = next(iter(loader))
-    print(f"Shape of the Batch of Spectrograms: {specs.shape}") # [Batch, Canais, Freq, Tempo]
-    print(f"Shape of Batch of Labels: {targets.shape}")      # [Batch, 234]
-    print("DataLoader's done!")
+    waveforms, targets = next(iter(loader))
+    print(f"Shape of the Batch of Waveforms: {waveforms.shape}") # [Batch, Canais, Tempo]
+    print(f"Shape of Batch of Labels: {targets.shape}")          # [Batch, 234]
+    print("DataLoader is done and CPU is happy!")
