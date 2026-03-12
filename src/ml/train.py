@@ -5,37 +5,83 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torchaudio.transforms as T
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
+from torch.amp import autocast, GradScaler
 
 from src.data.data_loader import DeepWetlandsDataset
 from src.ml.efficientnet_b0 import DeepWetlandsModel
 from src.ml.training_logger import TrainingLogger
 
+class GPUAudioTransform(nn.Module):
+    def __init__(self, target_sample_rate=32000):
+        super().__init__()
+        self.mel_spectrogram = T.MelSpectrogram(
+            sample_rate=target_sample_rate,
+            n_fft=2048,
+            hop_length=512,
+            n_mels=128,
+            f_min=0,
+            f_max=16000
+        )
+        self.db_transform = T.AmplitudeToDB()
+        self.time_mask = T.TimeMasking(time_mask_param=30)
+        self.freq_mask = T.FrequencyMasking(freq_mask_param=15)
 
-def train_one_epoch(model, loader, optimizer, criterion, device):
+    def forward(self, waveform, is_train=False):
+        spec = self.mel_spectrogram(waveform)
+        spec = self.db_transform(spec)
+        if is_train:
+            spec = self.freq_mask(spec)
+            spec = self.time_mask(spec)
+        return spec
+
+def mixup_data(x, y, alpha=0.5):
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1.0
+
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size).to(x.device)
+
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    mixed_y = lam * y + (1 - lam) * y[index, :]
+    
+    return mixed_x, mixed_y
+
+def train_one_epoch(model, loader, optimizer, criterion, device, audio_transform, scaler):
     model.train()
     running_loss = 0.0
 
     pbar = tqdm(loader, desc="Training")
-    for specs, targets in pbar:
-        specs   = specs.to(device)
-        targets = targets.to(device)
+    for waveforms, targets in pbar:
+        waveforms = waveforms.to(device)
+        targets   = targets.to(device)
+
+        specs = audio_transform(waveforms, is_train=True)
+
+        if np.random.rand() < 0.5:
+            specs, targets = mixup_data(specs, targets, alpha=0.5)
 
         optimizer.zero_grad()
-        outputs = model(specs)
-        loss    = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
+
+        with autocast(device_type=device.type, dtype=torch.float16):
+            outputs = model(specs)
+            loss    = criterion(outputs, targets)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         running_loss += loss.item()
         pbar.set_postfix(loss=loss.item())
 
     return running_loss / len(loader)
 
-def validate(model, loader, criterion, device):
-    """Returns loss avg + arrays of pred/targets to logger."""
+def validate(model, loader, criterion, device, audio_transform):
     model.eval()
     running_loss = 0.0
     all_preds   = []
@@ -43,17 +89,21 @@ def validate(model, loader, criterion, device):
 
     with torch.no_grad():
         pbar = tqdm(loader, desc="Validating")
-        for specs, targets in pbar:
-            specs   = specs.to(device)
-            targets = targets.to(device)
+        for waveforms, targets in pbar:
+            waveforms = waveforms.to(device)
+            targets   = targets.to(device)
 
-            outputs = model(specs)
-            loss    = criterion(outputs, targets)
+            specs = audio_transform(waveforms, is_train=False)
+
+            with autocast(device_type=device.type, dtype=torch.float16):
+                outputs = model(specs)
+                loss    = criterion(outputs, targets)
+            
             running_loss += loss.item()
             pbar.set_postfix(loss=loss.item())
 
-            all_preds.append(outputs.cpu().numpy())
-            all_targets.append(targets.cpu().numpy())
+            all_preds.append(outputs.float().cpu().numpy())
+            all_targets.append(targets.float().cpu().numpy())
 
     val_preds   = np.concatenate(all_preds,   axis=0)
     val_targets = np.concatenate(all_targets, axis=0)
@@ -98,23 +148,27 @@ def build_loaders(base_dir, batch_size, num_workers):
 
 def main():
     BASE_DIR    = "data"
-    EPOCHS      = 20
+    EPOCHS      = 30
     BATCH_SIZE  = 32
     LR          = 1e-3
-    NUM_WORKERS = 4
-    RUN_NAME    = "run_001"
+    NUM_WORKERS = 1
+    RUN_NAME    = "run_003"
     DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on: {DEVICE}")
 
     train_loader, val_loader, label_map = build_loaders(BASE_DIR, BATCH_SIZE, NUM_WORKERS)
     print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    model     = DeepWetlandsModel(model_name='efficientnet_b0', num_classes=len(label_map))
+    model = DeepWetlandsModel(model_name='efficientnet_b0', num_classes=len(label_map))
     model.to(DEVICE)
+    
+    audio_transform = GPUAudioTransform().to(DEVICE)
 
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LR)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+
+    scaler = GradScaler("cuda")
 
     logger = TrainingLogger(label_map, output_dir=f"logs/{RUN_NAME}")
 
@@ -124,8 +178,8 @@ def main():
         print(f"\nEpoch {epoch}/{EPOCHS}")
         t0 = time.time()
 
-        train_loss                        = train_one_epoch(model, train_loader, optimizer, criterion, DEVICE)
-        val_loss, val_preds, val_targets  = validate(model, val_loader, criterion, DEVICE)
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, DEVICE, audio_transform, scaler)
+        val_loss, val_preds, val_targets = validate(model, val_loader, criterion, DEVICE, audio_transform)
         scheduler.step()
 
         epoch_time = time.time() - t0
@@ -145,7 +199,7 @@ def main():
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), "models/best_model.pth")
-            print(f"  → New best model saved! Val Loss: {val_loss:.4f}")
+            print(f"New best model saved! Val Loss: {val_loss:.4f}")
 
     logger.finalize()
 
