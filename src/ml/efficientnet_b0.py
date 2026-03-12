@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import timm
 
-class PantanalPulseModel(nn.Module):
+class DeepWetlandsModel(nn.Module):
     def __init__(self, model_name='efficientnet_b0', num_classes=234, pretrained=True):
-        super(PantanalPulseModel, self).__init__()
+        super(DeepWetlandsModel, self).__init__()
 
         self.model = timm.create_model(
             model_name, 
@@ -20,7 +20,7 @@ class PantanalPulseModel(nn.Module):
 
 if __name__ == "__main__":
     # fast sanity test
-    model = PantanalPulseModel()
+    model = DeepWetlandsModel()
     dummy_input = torch.randn(8, 1, 128, 313)
     output = model(dummy_input)
     
