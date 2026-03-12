@@ -3,7 +3,7 @@ import torch.nn as nn
 import timm
 
 class DeepWetlandsModel(nn.Module):
-    def __init__(self, model_name='efficientnet_b0', num_classes=234, pretrained=True):
+    def __init__(self, model_name='convnext_nano', num_classes=234, pretrained=True):
         super(DeepWetlandsModel, self).__init__()
 
         self.model = timm.create_model(
