@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import torch
-import torchaudio.transforms as T
+import torchaudio.functional as F_audio
 from torch.utils.data import Dataset, DataLoader
 import soundfile as sf
 
@@ -10,7 +10,7 @@ class DeepWetlandsDataset(Dataset):
     def __init__(self, df, data_dir, label_map, target_sample_rate=32000, duration=5, is_train=True):
         """
         Dataset for the BirdCLEF+ Pantanal 2026 competition.
-        (CPU Light Version: Spectrograms are generated on the GPU)
+        (CPU Light Version: No classes instantiation inside __getitem__)
         """
         self.df = df
         self.data_dir = data_dir
@@ -43,9 +43,9 @@ class DeepWetlandsDataset(Dataset):
             sample_rate = self.target_sample_rate
 
         if sample_rate != self.target_sample_rate:
-            resampler = T.Resample(sample_rate, self.target_sample_rate)
-            waveform = resampler(waveform)
+            waveform = F_audio.resample(waveform, sample_rate, self.target_sample_rate)
 
+        # pad
         if waveform.shape[1] > self.num_samples:
             if self.is_train:
                 start = np.random.randint(0, waveform.shape[1] - self.num_samples)
@@ -80,19 +80,3 @@ def get_dataloader(csv_path, taxonomy_path, data_dir, batch_size=32, is_train=Tr
     )
     
     return loader, label_map
-
-if __name__ == "__main__":
-    BASE_DIR = "data"
-    
-    loader, l_map = get_dataloader(
-        csv_path=os.path.join(BASE_DIR, "train.csv"),
-        taxonomy_path=os.path.join(BASE_DIR, "taxonomy.csv"),
-        data_dir=os.path.join(BASE_DIR, "train_audio"),
-        batch_size=16,
-        num_workers=0
-    )
-
-    waveforms, targets = next(iter(loader))
-    print(f"Shape of the Batch of Waveforms: {waveforms.shape}") # [Batch, Canais, Tempo]
-    print(f"Shape of Batch of Labels: {targets.shape}")          # [Batch, 234]
-    print("DataLoader is done and CPU is happy!")
