@@ -5,6 +5,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.backends.cudnn as cudnn
 import torchaudio.transforms as T
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
@@ -14,6 +15,7 @@ from torch.amp import autocast, GradScaler
 from src.data.data_loader import DeepWetlandsDataset
 from src.ml.efficientnet_b0 import DeepWetlandsModel
 from src.ml.training_logger import TrainingLogger
+
 
 class GPUAudioTransform(nn.Module):
     def __init__(self, target_sample_rate=32000):
@@ -52,32 +54,37 @@ def mixup_data(x, y, alpha=0.5):
     
     return mixed_x, mixed_y
 
-def train_one_epoch(model, loader, optimizer, criterion, device, audio_transform, scaler):
+def train_one_epoch(model, loader, optimizer, criterion, device, audio_transform, scaler, accumulation_steps=4):
     model.train()
     running_loss = 0.0
+    optimizer.zero_grad()
 
     pbar = tqdm(loader, desc="Training")
-    for waveforms, targets in pbar:
+    for i, (waveforms, targets) in enumerate(pbar):
         waveforms = waveforms.to(device)
         targets   = targets.to(device)
 
-        specs = audio_transform(waveforms, is_train=True)
+        with torch.no_grad():
+            specs = audio_transform(waveforms, is_train=True)
 
         if np.random.rand() < 0.5:
             specs, targets = mixup_data(specs, targets, alpha=0.5)
 
-        optimizer.zero_grad()
-
         with autocast(device_type=device.type, dtype=torch.float16):
             outputs = model(specs)
             loss    = criterion(outputs, targets)
+            loss    = loss / accumulation_steps 
 
         scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
 
-        running_loss += loss.item()
-        pbar.set_postfix(loss=loss.item())
+        if (i + 1) % accumulation_steps == 0 or (i + 1) == len(loader):
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
+
+        step_loss = loss.item() * accumulation_steps
+        running_loss += step_loss
+        pbar.set_postfix(loss=step_loss)
 
     return running_loss / len(loader)
 
@@ -149,12 +156,16 @@ def build_loaders(base_dir, batch_size, num_workers):
 def main():
     BASE_DIR    = "data"
     EPOCHS      = 30
-    BATCH_SIZE  = 32
+    BATCH_SIZE  = 64
+    ACCUM_STEPS = 1
     LR          = 1e-3
-    NUM_WORKERS = 1
+    NUM_WORKERS = 2
     RUN_NAME    = "run_003"
-    DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on: {DEVICE}")
+
+    cudnn.benchmark = True 
 
     train_loader, val_loader, label_map = build_loaders(BASE_DIR, BATCH_SIZE, NUM_WORKERS)
     print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
@@ -167,7 +178,7 @@ def main():
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LR)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
-
+    
     scaler = GradScaler("cuda")
 
     logger = TrainingLogger(label_map, output_dir=f"logs/{RUN_NAME}")
@@ -178,7 +189,7 @@ def main():
         print(f"\nEpoch {epoch}/{EPOCHS}")
         t0 = time.time()
 
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, DEVICE, audio_transform, scaler)
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, DEVICE, audio_transform, scaler, ACCUM_STEPS)
         val_loss, val_preds, val_targets = validate(model, val_loader, criterion, DEVICE, audio_transform)
         scheduler.step()
 
