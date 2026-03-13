@@ -1,25 +1,55 @@
-import torchaudio.transforms as T
+import torch
 import torch.nn as nn
+import torchaudio.transforms as T
+
 
 class GPUAudioTransform(nn.Module):
-    def __init__(self, target_sample_rate=32000):
+    """
+    GPU-accelerated mel spectrogram + augmentation pipeline.
+    """
+
+    def __init__(
+        self,
+        target_sample_rate: int = 32000,
+        n_fft: int = 2048,
+        hop_length: int = 512,
+        n_mels: int = 128,
+        f_min: float = 500,
+        f_max: float = 16000,
+        time_mask_param: int = 30,
+        freq_mask_param: int = 15,
+        n_time_masks: int = 2,
+        n_freq_masks: int = 2,
+    ):
         super().__init__()
+
         self.mel_spectrogram = T.MelSpectrogram(
             sample_rate=target_sample_rate,
-            n_fft=2048,
-            hop_length=512,
-            n_mels=128,
-            f_min=0,
-            f_max=16000
+            n_fft=n_fft,
+            hop_length=hop_length,
+            n_mels=n_mels,
+            f_min=f_min,
+            f_max=f_max,
         )
         self.db_transform = T.AmplitudeToDB()
-        self.time_mask = T.TimeMasking(time_mask_param=30)
-        self.freq_mask = T.FrequencyMasking(freq_mask_param=15)
 
-    def forward(self, waveform, is_train=False):
-        spec = self.mel_spectrogram(waveform)
+        self.time_masks = nn.ModuleList([
+            T.TimeMasking(time_mask_param=time_mask_param, iid_masks=True)
+            for _ in range(n_time_masks)
+        ])
+        self.freq_masks = nn.ModuleList([
+            T.FrequencyMasking(freq_mask_param=freq_mask_param, iid_masks=True)
+            for _ in range(n_freq_masks)
+        ])
+
+    def forward(self, waveform: torch.Tensor, is_train: bool = False) -> torch.Tensor:
+        spec = self.mel_spectrogram(waveform)   # [B, 1, n_mels, T]
         spec = self.db_transform(spec)
+
         if is_train:
-            spec = self.freq_mask(spec)
-            spec = self.time_mask(spec)
+            for fm in self.freq_masks:
+                spec = fm(spec)
+            for tm in self.time_masks:
+                spec = tm(spec)
+
         return spec
