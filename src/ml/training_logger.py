@@ -59,7 +59,7 @@ COLORS = {
 
 
 class TrainingLogger:
-    def __init__(self, label_map: dict, output_dir: str = "logs/run", model_name = "convnext_nano"):
+    def __init__(self, label_map: dict, output_dir: str = "logs/run", model_name = "efficientnet_b0"):
         self.model = model_name
         self.label_map    = label_map
         self.idx_to_label = {v: k for k, v in label_map.items()}
