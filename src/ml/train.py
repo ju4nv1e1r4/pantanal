@@ -159,9 +159,9 @@ def main():
     BATCH_SIZE  = 64
     ACCUM_STEPS = 1
     LR          = 2e-3
-    NUM_WORKERS = 2
+    NUM_WORKERS = 4
     RUN_NAME    = "run_005"
-    PATIENCE    = 5 # NOTE: testing early-stopping with patience in next experiment
+    PATIENCE    = 5
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on: {DEVICE}")
@@ -183,7 +183,7 @@ def main():
 
     optimizer = optim.AdamW([
         {'params': backbone_params, 'lr': LR * 0.1},   # 1e-4
-        {'params': head_params,     'lr': LR},          # 1e-3
+        {'params': head_params,     'lr': LR},         # 1e-3
     ], weight_decay=1e-4)
 
     WARMUP_EPOCHS = 3
@@ -225,10 +225,13 @@ def main():
         epoch_time = time.time() - t0
         print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Time: {epoch_time:.0f}s")
 
-        metrics = logger.log_epoch(
-            epoch, train_loss, val_loss, val_preds, val_targets, epoch_time,
-        )
-        macro_auc = metrics.get('macro_auc', 0.0)
+        logger.log_epoch(epoch, train_loss, val_loss, val_preds, val_targets, epoch_time)
+
+        from sklearn.metrics import roc_auc_score
+        try:
+            macro_auc = roc_auc_score(val_targets, val_preds, average='macro')
+        except ValueError:
+            macro_auc = 0.0
 
         torch.save({
             "epoch":                epoch,
