@@ -162,7 +162,7 @@ def main():
     LR          = 2e-3
     NUM_WORKERS = 4
     RUN_NAME    = "run_008_focal_loss"
-    PATIENCE    = 15
+    PATIENCE    = 30
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on: {DEVICE}")
@@ -249,7 +249,7 @@ def main():
             best_auc = macro_auc
             epochs_no_gain = 0
             torch.save(model.state_dict(), "models/best_model.pth")
-            print(f"  ✦ New best model — macro-AUC: {best_auc:.4f}")
+            print(f"New best model — macro-AUC: {best_auc:.4f}")
         else:
             epochs_no_gain += 1
             print(f"  No gain for {epochs_no_gain}/{PATIENCE} epochs (best AUC: {best_auc:.4f})")
