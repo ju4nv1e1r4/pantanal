@@ -161,7 +161,7 @@ def main():
     LR          = 2e-3
     NUM_WORKERS = 4
     RUN_NAME    = "run_005"
-    PATIENCE    = 5
+    PATIENCE    = 15
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on: {DEVICE}")
@@ -228,6 +228,8 @@ def main():
         logger.log_epoch(epoch, train_loss, val_loss, val_preds, val_targets, epoch_time)
 
         from sklearn.metrics import roc_auc_score
+        import warnings
+        warnings.filterwarnings('ignore')
         try:
             macro_auc = roc_auc_score(val_targets, val_preds, average='macro')
         except ValueError:
