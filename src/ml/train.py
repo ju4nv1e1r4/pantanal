@@ -15,6 +15,7 @@ from src.data.data_loader import DeepWetlandsDataset
 from src.ml.model import DeepWetlandsModel
 from src.ml.training_logger import TrainingLogger
 from src.ml.audio_transform import GPUAudioTransform
+from src.ml.losses import FocalLoss
 
 
 def mixup_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 0.2):
@@ -44,7 +45,7 @@ def train_one_epoch(
         waveforms = waveforms.to(device)
         targets   = targets.to(device)
 
-        if np.random.rand() < 0.5:
+        if np.random.rand() < 0.5: # 50% to avoid rare audio destruction
             waveforms, targets = mixup_data(waveforms, targets, alpha=0.2)
 
         with torch.no_grad():
@@ -160,7 +161,7 @@ def main():
     ACCUM_STEPS = 1
     LR          = 2e-3
     NUM_WORKERS = 4
-    RUN_NAME    = "run_005"
+    RUN_NAME    = "run_008_focal_loss"
     PATIENCE    = 15
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -176,14 +177,14 @@ def main():
 
     audio_transform = GPUAudioTransform().to(DEVICE)
 
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = FocalLoss(gamma=2.0, alpha=0.25)
 
     backbone_params = [p for n, p in model.named_parameters() if 'head' not in n]
     head_params     = [p for n, p in model.named_parameters() if 'head'     in n]
 
     optimizer = optim.AdamW([
-        {'params': backbone_params, 'lr': LR * 0.1},   # 1e-4
-        {'params': head_params,     'lr': LR},         # 1e-3
+        {'params': backbone_params, 'lr': LR * 0.1},   # 2e-4
+        {'params': head_params,     'lr': LR},         # 2e-3
     ], weight_decay=1e-4)
 
     WARMUP_EPOCHS = 3
@@ -199,7 +200,7 @@ def main():
     scaler = GradScaler("cuda")
 
     logger = TrainingLogger(
-        model_name="efficientnet_b0",
+        model_name="efficientnet_b0_focal_loss",
         label_map=label_map,
         output_dir=f"logs/{RUN_NAME}",
     )

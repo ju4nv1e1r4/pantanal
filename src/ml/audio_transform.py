@@ -6,16 +6,16 @@ import torchaudio.transforms as T
 class GPUAudioTransform(nn.Module):
     """
     GPU-accelerated mel spectrogram + augmentation pipeline.
+    Ajustado cirurgicamente para Amphibians e Insecta.
     """
-
     def __init__(
         self,
         target_sample_rate: int = 32000,
         n_fft: int = 2048,
         hop_length: int = 512,
-        n_mels: int = 128,
-        f_min: float = 500,
-        f_max: float = 16000,
+        n_mels: int = 224,      # NOTE: increaed from 128 to 224. More resolution to insects noise.
+        f_min: float = 50.0,    # NOTE: from 500 para 50. To capture low amphibian croak.
+        f_max: float = 16000.0,
         time_mask_param: int = 30,
         freq_mask_param: int = 15,
         n_time_masks: int = 2,
