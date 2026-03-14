@@ -38,25 +38,35 @@ SPECIES_CONFIG = {
  
 TARGET_SR = 32000 
 
-def load_audio(path: Path, target_sr: int = TARGET_SR):
-    y, sr = librosa.load(str(path), sr=target_sr, mono=True)
+def load_audio(path: Path, target_sr: int = TARGET_SR) -> tuple[np.ndarray, int]:
+    y, sr = librosa.load(str(path), sr=target_sr, mono=True, dtype=np.float32)
+    y = np.ascontiguousarray(y, dtype=np.float32)
     return y, sr
 
 def save_audio(y: np.ndarray, sr: int, out_path: Path, dry_run: bool = False):
     if dry_run:
         print(f"  [dry_run] would write -> {out_path.name}")
         return
-    sf.write(str(out_path), y, sr, format="OGG", subtype="VORBIS")
+    y_out = np.ascontiguousarray(y, dtype=np.float32)
+    try:
+        sf.write(str(out_path), y_out, sr, format="OGG", subtype="VORBIS")
+    except Exception:
+        wav_path = out_path.with_suffix(".wav")
+        sf.write(str(wav_path), y_out, sr, format="WAV", subtype="PCM_16")
 
 def augment_time_stretch(y: np.ndarray, rate: float) -> np.ndarray:
-    return librosa.effects.time_stretch(y, rate=rate)
+    y_in = np.ascontiguousarray(y, dtype=np.float32)
+    y_out = librosa.effects.time_stretch(y_in, rate=rate)
+    return np.ascontiguousarray(y_out, dtype=np.float32)
 
 def augment_pitch_shift(y: np.ndarray, sr: int, n_steps: float) -> np.ndarray:
-    return librosa.effects.pitch_shift(y, sr=sr, n_steps=n_steps)
+    y_in = np.ascontiguousarray(y, dtype=np.float32)
+    y_out = librosa.effects.pitch_shift(y_in, sr=sr, n_steps=n_steps)
+    return np.ascontiguousarray(y_out, dtype=np.float32)
 
 def augment_add_noise(y: np.ndarray, noise_level: float) -> np.ndarray:
     noise = np.random.randn(len(y)).astype(np.float32)
-    return y + noise_level * noise
+    return np.ascontiguousarray(y + noise_level * noise, dtype=np.float32)
 
 def extract_windows(
     y: np.ndarray,
@@ -70,7 +80,8 @@ def extract_windows(
     windows = []
     start = 0
     while start + win_samples <= len(y):
-        windows.append(y[start : start + win_samples])
+        win = np.ascontiguousarray(y[start : start + win_samples], dtype=np.float32)
+        windows.append(win)
         start += hop_samples
     return windows
 
@@ -242,8 +253,8 @@ def main():
         help="Dataset root (contains train_audio/)"
     )
     parser.add_argument(
-        "--labels", nargs="+", default=["67252", "555123"],
-        help="Labels to augment (default: 67252 555123)"
+        "--labels", nargs="+", default=["67252", "1595929"],
+        help="Labels to augment (default: 67252 1595929)"
     )
     parser.add_argument(
         "--target_count", type=int, default=25,
