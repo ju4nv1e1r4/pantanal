@@ -224,3 +224,4 @@ data/*.csv
 data/*.txt
 *.png
 models/
+*.diff
