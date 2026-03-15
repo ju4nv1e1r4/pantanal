@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedGroupKFold
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 
@@ -112,14 +112,15 @@ def build_loaders(base_dir: str, batch_size: int, num_workers: int):
 
     print(f"Rare species (forced in training): {rare_mask.sum()} samples")
 
-    train_df, val_df = train_test_split(
-        df_common,
-        test_size=0.2,
-        stratify=df_common['primary_label'],
-        random_state=42,
-    )
+    sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
+
+    groups = df_common['author']
+    train_idx, val_idx = next(sgkf.split(df_common, df_common['primary_label'], groups=groups))
+    
+    train_df = df_common.iloc[train_idx].copy()
+    val_df   = df_common.iloc[val_idx].copy()
+
     train_df = pd.concat([train_df, df_rare]).reset_index(drop=True)
-    val_df   = val_df.reset_index(drop=True)
 
     print(f"Train: {len(train_df)} samples | Val: {len(val_df)} samples")
 
@@ -231,8 +232,14 @@ def main():
         from sklearn.metrics import roc_auc_score
         import warnings
         warnings.filterwarnings('ignore')
+
         try:
-            macro_auc = roc_auc_score(val_targets, val_preds, average='macro')
+            mask = val_targets.sum(axis=0) > 0
+
+            if mask.sum() > 0:
+                macro_auc = roc_auc_score(val_targets[:, mask], val_preds[:, mask], average='macro')
+            else:
+                macro_auc = 0.0
         except ValueError:
             macro_auc = 0.0
 
