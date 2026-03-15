@@ -133,12 +133,13 @@ def run_inference(
     label_columns:  list[str],
     sample_sub:     pd.DataFrame,
     batch_size:     int = 32,
+    local_test:     bool = False,
 ) -> pd.DataFrame:
     device = torch.device("cpu")
     model.eval()
     model.to(device)
 
-    required_row_ids = set(sample_sub["row_id"].values)
+    required_row_ids = set() if local_test else set(sample_sub["row_id"].values)
 
     results = []
 
@@ -174,7 +175,7 @@ def run_inference(
 
         for j, t_end in enumerate(end_times):
             row_id = f"{sc_stem}_{t_end}"
-            if row_id not in required_row_ids:
+            if required_row_ids and row_id not in required_row_ids:
                 continue # Kaggle only scores rows in sample_submission
             row = {"row_id": row_id}
             for k, col in enumerate(label_columns):
@@ -221,16 +222,20 @@ def main(args):
         label_columns  = label_columns,
         sample_sub     = sample_sub,
         batch_size     = args.batch_size,
+        local_test     = args.local_test,
     )
 
-    df_out = sample_sub.copy()
-    df_out = df_out.set_index("row_id")
-    df_preds = df_preds.set_index("row_id")
-    df_out.update(df_preds)
-    df_out = df_out.reset_index()
-
-    df_out.to_csv(args.output, index=False)
-    print(f"Saved: {args.output}  ({len(df_out)} rows × {len(df_out.columns)} cols)")
+    if args.local_test:
+        df_preds.to_csv(args.output, index=False)
+        print(f"Saved (local test): {args.output}  ({len(df_preds)} rows × {len(df_preds.columns)} cols)")
+    else:
+        df_out = sample_sub.copy()
+        df_out = df_out.set_index("row_id")
+        df_preds = df_preds.set_index("row_id")
+        df_out.update(df_preds)
+        df_out = df_out.reset_index()
+        df_out.to_csv(args.output, index=False)
+        print(f"Saved: {args.output}  ({len(df_out)} rows × {len(df_out.columns)} cols)")
 
 
 if __name__ == "__main__":
@@ -244,5 +249,8 @@ if __name__ == "__main__":
     parser.add_argument("--output",      default=str(KAGGLE_OUTPUT))
     parser.add_argument("--batch_size",  type=int, default=32,
                         help="Windows per batch (reduce if OOM)")
+    parser.add_argument("--local_test", action="store_true",
+                        help="Skip row_id filter, save raw predictions")
+
     args = parser.parse_args()
     main(args)
