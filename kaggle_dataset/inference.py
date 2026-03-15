@@ -134,6 +134,7 @@ def run_inference(
     sample_sub:     pd.DataFrame,
     batch_size:     int = 32,
     local_test:     bool = False,
+    overlap: float = 0.5,
 ) -> pd.DataFrame:
     device = torch.device("cpu")
     model.eval()
@@ -159,7 +160,7 @@ def run_inference(
             print(f"  [WARNING] Could not load {sc_path.name}: {e}")
             continue
 
-        windows, end_times = slice_soundscape(waveform)
+        windows, end_times = slice_soundscape(waveform, overlap=overlap)
 
         all_probs = []
         for i in range(0, len(windows), batch_size):
@@ -232,6 +233,7 @@ def main(args):
         sample_sub     = sample_sub,
         batch_size     = args.batch_size,
         local_test     = args.local_test,
+        overlap        = args.overlap,
     )
 
     if args.local_test:
@@ -255,11 +257,27 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="BirdCLEF+ 2026 inference — generates submission.csv"
     )
-    parser.add_argument("--soundscapes", default=str(KAGGLE_SOUNDSCAPES))
-    parser.add_argument("--model",       default=str(KAGGLE_MODEL))
-    parser.add_argument("--taxonomy",    default=str(KAGGLE_TAXONOMY))
-    parser.add_argument("--submission",  default=str(KAGGLE_SUBMISSION))
-    parser.add_argument("--output",      default=str(KAGGLE_OUTPUT))
+
+    parser.add_argument(
+        "--soundscapes",
+        default=str(KAGGLE_SOUNDSCAPES),
+    )
+    parser.add_argument(
+        "--model",
+        default=str(KAGGLE_MODEL),
+    )
+    parser.add_argument(
+        "--taxonomy",
+        default=str(KAGGLE_TAXONOMY),
+    )
+    parser.add_argument(
+        "--submission",
+        default=str(KAGGLE_SUBMISSION),
+    )
+    parser.add_argument(
+        "--output",
+        default=str(KAGGLE_OUTPUT),
+    )
     parser.add_argument(
         "--batch_size", 
         type=int,
