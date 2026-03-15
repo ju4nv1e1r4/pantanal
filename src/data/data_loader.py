@@ -8,10 +8,6 @@ import soundfile as sf
 
 class DeepWetlandsDataset(Dataset):
     def __init__(self, df, data_dir, label_map, target_sample_rate=32000, duration=5, is_train=True):
-        """
-        Dataset for the BirdCLEF+ Pantanal 2026 competition.
-        (CPU Light Version: No classes instantiation inside __getitem__)
-        """
         self.df = df
         self.data_dir = data_dir
         self.label_map = label_map
@@ -50,7 +46,7 @@ class DeepWetlandsDataset(Dataset):
             if self.is_train:
                 start = np.random.randint(0, waveform.shape[1] - self.num_samples)
             else:
-                start = 0
+                start = (waveform.shape[1] - self.num_samples) // 2
             waveform = waveform[:, start:start + self.num_samples]
         else:
             padding = self.num_samples - waveform.shape[1]
