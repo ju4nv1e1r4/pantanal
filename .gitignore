@@ -225,3 +225,7 @@ data/*.txt
 *.png
 models/
 *.diff
+
+# kaggle stuffs
+kaggle_dataset/*.csv
+kaggle_dataset/*.pth
