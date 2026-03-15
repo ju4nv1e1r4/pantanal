@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
 
+
 # Kaggle default paths  (overridden by CLI args for local runs)
 KAGGLE_SOUNDSCAPES = Path("/kaggle/input/birdclef-2026/test_soundscapes")
 KAGGLE_MODEL       = Path("/kaggle/input/deepwetlands-model/best_model.pth")
@@ -23,9 +24,11 @@ KAGGLE_OUTPUT      = Path("/kaggle/working/submission.csv")
 # Audio constants (must match training exactly)
 TARGET_SR      = 32000
 WINDOW_SECONDS = 5
-WINDOW_SAMPLES = TARGET_SR * WINDOW_SECONDS   # 160_000 samples per window
+WINDOW_SAMPLES = TARGET_SR * WINDOW_SECONDS   # 160 000 samples per window
 
-# Mel spectrogram  (must match GPUAudioTransform in audio_transform.py)
+
+# Mel spectrogram (must match GPUAudioTransform in audio_transform.py)
+
 N_FFT      = 2048
 HOP_LENGTH = 512
 N_MELS     = 224
@@ -45,22 +48,26 @@ mel_transform = torchaudio.transforms.MelSpectrogram(
 amplitude_to_db = torchaudio.transforms.AmplitudeToDB(top_db=80)
 
 
-def build_model(num_classes: int) -> nn.Module:
-    import timm
-    backbone = timm.create_model(
-        "efficientnet_b0",
-        pretrained   = False,
-        num_classes  = 0,
-        global_pool  = "avg",
-    )
-    embed_dim = backbone.num_features
+class DeepWetlandsModel(nn.Module):
+    def __init__(self, model_name: str = "efficientnet_b0",
+                 num_classes: int = 234):
+        super().__init__()
+        import timm
+        self.model = timm.create_model(
+            model_name,
+            pretrained  = False,
+            num_classes = num_classes,
+            in_chans    = 1,
+            drop_rate   = 0.2,
+        )
 
-    model = nn.Sequential(
-        backbone,
-        nn.Dropout(p=0.2),
-        nn.Linear(embed_dim, num_classes),
-    )
-    return model
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x)
+
+def build_model(num_classes: int,
+                model_name: str = "efficientnet_b0") -> nn.Module:
+    return DeepWetlandsModel(model_name=model_name, num_classes=num_classes)
+
 
 def load_soundscape(path: Path) -> torch.Tensor:
     waveform, sr = torchaudio.load(str(path))
@@ -74,7 +81,6 @@ def load_soundscape(path: Path) -> torch.Tensor:
         waveform = F_audio.resample(waveform, sr, TARGET_SR)
 
     return waveform   # [1, N]
-
 
 def slice_soundscape(waveform: torch.Tensor) -> tuple[list[torch.Tensor], list[int]]:
     total_samples = waveform.shape[1]
@@ -99,17 +105,15 @@ def slice_soundscape(waveform: torch.Tensor) -> tuple[list[torch.Tensor], list[i
 
     return windows, end_times
 
-
 def waveform_to_spec(waveform: torch.Tensor) -> torch.Tensor:
-    spec = mel_transform(waveform)          # [1, N_MELS, T]
+    spec = mel_transform(waveform)   # [1, N_MELS, T]
     spec = amplitude_to_db(spec)
 
     mean = spec.mean()
     std  = spec.std() + 1e-6
-    spec = (spec - mean) / std
+    spec = (spec - mean) / std       # [1, N_MELS, T]
 
-    spec = spec.repeat(3, 1, 1)             # [3, N_MELS, T]
-    spec = spec.unsqueeze(0)                # [1, 3, N_MELS, T]
+    spec = spec.unsqueeze(0)         # [1, 1, N_MELS, T]  — batch dim
 
     return spec
 
@@ -127,7 +131,7 @@ def run_inference(
 
     required_row_ids = set(sample_sub["row_id"].values)
 
-    results = [] # list of {"row_id": ..., label1: prob, label2: prob, ...}
+    results = []
 
     soundscape_files = sorted(soundscape_dir.glob("*.ogg"))
     if not soundscape_files:
@@ -162,7 +166,7 @@ def run_inference(
         for j, t_end in enumerate(end_times):
             row_id = f"{sc_stem}_{t_end}"
             if row_id not in required_row_ids:
-                continue
+                continue # Kaggle only scores rows in sample_submission
             row = {"row_id": row_id}
             for k, col in enumerate(label_columns):
                 row[col] = float(all_probs[j, k])
@@ -197,7 +201,6 @@ def main(args):
 
     model = build_model(num_classes=len(classes))
     state = torch.load(args.model, map_location="cpu", weights_only=False)
-
     if isinstance(state, dict) and "model_state_dict" in state:
         state = state["model_state_dict"]
     model.load_state_dict(state)
