@@ -21,6 +21,7 @@ KAGGLE_TAXONOMY    = Path("/kaggle/input/birdclef-2026/taxonomy.csv")
 KAGGLE_SUBMISSION  = Path("/kaggle/input/birdclef-2026/sample_submission.csv")
 KAGGLE_OUTPUT      = Path("/kaggle/working/submission.csv")
 
+
 # Audio constants (must match training exactly)
 TARGET_SR      = 32000
 WINDOW_SECONDS = 5
@@ -28,7 +29,6 @@ WINDOW_SAMPLES = TARGET_SR * WINDOW_SECONDS   # 160 000 samples per window
 
 
 # Mel spectrogram (must match GPUAudioTransform in audio_transform.py)
-
 N_FFT      = 2048
 HOP_LENGTH = 512
 N_MELS     = 224
@@ -64,23 +64,31 @@ class DeepWetlandsModel(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
 
+
 def build_model(num_classes: int,
                 model_name: str = "efficientnet_b0") -> nn.Module:
     return DeepWetlandsModel(model_name=model_name, num_classes=num_classes)
 
-
 def load_soundscape(path: Path) -> torch.Tensor:
-    waveform, sr = torchaudio.load(str(path))
+    import soundfile as sf
+    from math import gcd
+    from scipy.signal import resample_poly
+
+    y, sr = sf.read(str(path), dtype="float32", always_2d=False)
 
     # stereo -> mono
-    if waveform.shape[0] > 1:
-        waveform = waveform.mean(dim=0, keepdim=True)
+    if y.ndim == 2:
+        y = y.mean(axis=1)
 
     # resample if needed
     if sr != TARGET_SR:
-        waveform = F_audio.resample(waveform, sr, TARGET_SR)
+        d = gcd(sr, TARGET_SR)
+        y = resample_poly(y.astype("float64"),
+                          up=TARGET_SR // d,
+                          down=sr // d).astype("float32")
 
-    return waveform   # [1, N]
+    waveform = torch.from_numpy(y).unsqueeze(0)  # [1, N]
+    return waveform
 
 def slice_soundscape(waveform: torch.Tensor) -> tuple[list[torch.Tensor], list[int]]:
     total_samples = waveform.shape[1]
@@ -104,6 +112,7 @@ def slice_soundscape(waveform: torch.Tensor) -> tuple[list[torch.Tensor], list[i
         end_times.append(t_end)
 
     return windows, end_times
+
 
 def waveform_to_spec(waveform: torch.Tensor) -> torch.Tensor:
     spec = mel_transform(waveform)   # [1, N_MELS, T]
