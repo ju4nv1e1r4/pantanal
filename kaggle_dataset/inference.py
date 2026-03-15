@@ -229,11 +229,15 @@ def main(args):
         df_preds.to_csv(args.output, index=False)
         print(f"Saved (local test): {args.output}  ({len(df_preds)} rows × {len(df_preds.columns)} cols)")
     else:
-        df_out = sample_sub.copy()
-        df_out = df_out.set_index("row_id")
-        df_preds = df_preds.set_index("row_id")
-        df_out.update(df_preds)
-        df_out = df_out.reset_index()
+        if df_preds.empty:
+            print("[WARNING] No predictions generated... submitting uniform prior.")
+            df_out = sample_sub.copy()
+        else:
+            df_out = sample_sub.copy()
+            df_out = df_out.set_index("row_id")
+            df_preds = df_preds.set_index("row_id")
+            df_out.update(df_preds)
+            df_out = df_out.reset_index()
         df_out.to_csv(args.output, index=False)
         print(f"Saved: {args.output}  ({len(df_out)} rows × {len(df_out.columns)} cols)")
 
