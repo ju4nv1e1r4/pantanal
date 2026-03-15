@@ -45,7 +45,7 @@ mel_transform = torchaudio.transforms.MelSpectrogram(
     power          = 2.0,
 )
 
-amplitude_to_db = torchaudio.transforms.AmplitudeToDB(top_db=80)
+amplitude_to_db = torchaudio.transforms.AmplitudeToDB()
 
 
 class DeepWetlandsModel(nn.Module):
@@ -116,14 +116,8 @@ def slice_soundscape(waveform: torch.Tensor) -> tuple[list[torch.Tensor], list[i
 
 def waveform_to_spec(waveform: torch.Tensor) -> torch.Tensor:
     spec = mel_transform(waveform)   # [1, N_MELS, T]
-    spec = amplitude_to_db(spec)
-
-    mean = spec.mean()
-    std  = spec.std() + 1e-6
-    spec = (spec - mean) / std       # [1, N_MELS, T]
-
-    spec = spec.unsqueeze(0)         # [1, 1, N_MELS, T]  — batch dim
-
+    spec = amplitude_to_db(spec)     # [1, N_MELS, T]
+    spec = spec.unsqueeze(0)         # [1, 1, N_MELS, T]
     return spec
 
 @torch.no_grad()
