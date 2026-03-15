@@ -229,3 +229,4 @@ models/
 # kaggle stuffs
 kaggle_dataset/*.csv
 kaggle_dataset/*.pth
+*.csv
