@@ -6,7 +6,6 @@ import torchaudio.transforms as T
 class GPUAudioTransform(nn.Module):
     """
     GPU-accelerated mel spectrogram + augmentation pipeline.
-    Ajustado cirurgicamente para Amphibians e Insecta.
     """
     def __init__(
         self,
