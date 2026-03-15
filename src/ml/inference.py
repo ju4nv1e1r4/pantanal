@@ -90,19 +90,25 @@ def load_soundscape(path: Path) -> torch.Tensor:
     waveform = torch.from_numpy(y).unsqueeze(0)  # [1, N]
     return waveform
 
-def slice_soundscape(waveform: torch.Tensor) -> tuple[list[torch.Tensor], list[int]]:
+def slice_soundscape(
+    waveform: torch.Tensor,
+    overlap: float = 0.5,
+) -> tuple[list[torch.Tensor], list[int]]:
     total_samples = waveform.shape[1]
-    windows    = []
-    end_times  = []
-    start      = 0
-    t_end      = WINDOW_SECONDS
+    hop_samples   = int(WINDOW_SAMPLES * (1.0 - overlap))
+    hop_seconds   = WINDOW_SECONDS * (1.0 - overlap)
+
+    windows   = []
+    end_times = []
+    start     = 0
+    t_end     = float(WINDOW_SECONDS)
 
     while start + WINDOW_SAMPLES <= total_samples:
         chunk = waveform[:, start : start + WINDOW_SAMPLES]
         windows.append(chunk)
         end_times.append(t_end)
-        start += WINDOW_SAMPLES
-        t_end += WINDOW_SECONDS
+        start += hop_samples
+        t_end += hop_seconds
 
     remainder = total_samples - start
     if remainder > 0:
@@ -128,6 +134,7 @@ def run_inference(
     sample_sub:     pd.DataFrame,
     batch_size:     int = 32,
     local_test:     bool = False,
+    overlap: float = 0.5,
 ) -> pd.DataFrame:
     device = torch.device("cpu")
     model.eval()
@@ -153,7 +160,7 @@ def run_inference(
             print(f"  [WARNING] Could not load {sc_path.name}: {e}")
             continue
 
-        windows, end_times = slice_soundscape(waveform)
+        windows, end_times = slice_soundscape(waveform, overlap=overlap)
 
         all_probs = []
         for i in range(0, len(windows), batch_size):
@@ -167,13 +174,22 @@ def run_inference(
 
         all_probs = np.concatenate(all_probs, axis=0)  # [N_windows, num_classes]
 
+        from collections import defaultdict
+        pooled: dict[int, np.ndarray] = defaultdict(
+            lambda: np.full(len(label_columns), -np.inf)
+        )
         for j, t_end in enumerate(end_times):
-            row_id = f"{sc_stem}_{t_end}"
+            official_t = max(WINDOW_SECONDS,
+                             round(t_end / WINDOW_SECONDS) * WINDOW_SECONDS)
+            pooled[official_t] = np.maximum(pooled[official_t], all_probs[j])
+
+        for official_t, probs in pooled.items():
+            row_id = f"{sc_stem}_{official_t}"
             if required_row_ids and row_id not in required_row_ids:
-                continue # Kaggle only scores rows in sample_submission
+                continue
             row = {"row_id": row_id}
             for k, col in enumerate(label_columns):
-                row[col] = float(all_probs[j, k])
+                row[col] = float(probs[k])
             results.append(row)
 
     elapsed = time.time() - t_start
@@ -217,6 +233,7 @@ def main(args):
         sample_sub     = sample_sub,
         batch_size     = args.batch_size,
         local_test     = args.local_test,
+        overlap        = args.overlap,
     )
 
     if args.local_test:
@@ -236,15 +253,44 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="BirdCLEF+ 2026 inference — generates submission.csv"
     )
-    parser.add_argument("--soundscapes", default=str(KAGGLE_SOUNDSCAPES))
-    parser.add_argument("--model",       default=str(KAGGLE_MODEL))
-    parser.add_argument("--taxonomy",    default=str(KAGGLE_TAXONOMY))
-    parser.add_argument("--submission",  default=str(KAGGLE_SUBMISSION))
-    parser.add_argument("--output",      default=str(KAGGLE_OUTPUT))
-    parser.add_argument("--batch_size",  type=int, default=32,
-                        help="Windows per batch (reduce if OOM)")
-    parser.add_argument("--local_test", action="store_true",
-                        help="Skip row_id filter, save raw predictions")
+    
+    parser.add_argument(
+        "--soundscapes",
+        default=str(KAGGLE_SOUNDSCAPES),
+    )
+    parser.add_argument(
+        "--model",
+        default=str(KAGGLE_MODEL),
+    )
+    parser.add_argument(
+        "--taxonomy",
+        default=str(KAGGLE_TAXONOMY),
+    )
+    parser.add_argument(
+        "--submission",
+        default=str(KAGGLE_SUBMISSION),
+    )
+    parser.add_argument(
+        "--output",
+        default=str(KAGGLE_OUTPUT),
+    )
+    parser.add_argument(
+        "--batch_size", 
+        type=int,
+        default=32,
+        help="Windows per batch (reduce if OOM)"
+    )
+    parser.add_argument(
+        "--local_test",
+        action="store_true",
+        help="Skip row_id filter, save raw predictions"
+    )
+    parser.add_argument(
+        "--overlap",
+        type=float,
+        default=0.5,
+        help="Window overlap fraction (0.0=none, 0.5=50%%)"
+    )
 
     args = parser.parse_args()
     main(args)
