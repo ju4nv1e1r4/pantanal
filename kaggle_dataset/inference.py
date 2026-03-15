@@ -2,6 +2,7 @@ import argparse
 import time
 import warnings
 from pathlib import Path
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -174,7 +175,6 @@ def run_inference(
 
         all_probs = np.concatenate(all_probs, axis=0)  # [N_windows, num_classes]
 
-        from collections import defaultdict
         pooled: dict[int, np.ndarray] = defaultdict(
             lambda: np.full(len(label_columns), -np.inf)
         )
