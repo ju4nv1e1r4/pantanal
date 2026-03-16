@@ -122,7 +122,7 @@ if __name__ == "__main__":
     parser.add_argument("--labels", default="data/train_soundscapes_labels.csv")
     parser.add_argument("--taxonomy", default="data/taxonomy.csv")
     parser.add_argument("--model", required=True, help="Path to the .pth model")
-    parser.add_argument("--model_name", default="efficientnet_b5", help="Name of the timm architecture")
+    parser.add_argument("--model_name", default="efficientnet_b4", help="Name of the timm architecture")
     parser.add_argument("--batch_size", type=int, default=32)
     
     args = parser.parse_args()

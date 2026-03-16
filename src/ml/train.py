@@ -167,13 +167,15 @@ def build_loaders(base_dir: str, batch_size: int, num_workers: int):
 
 def main():
     BASE_DIR    = "data"
-    EPOCHS      = 30
-    BATCH_SIZE  = 64
-    ACCUM_STEPS = 1
+    EPOCHS      = 50
+    BATCH_SIZE  = 32
+    ACCUM_STEPS = 2
+    NUM_WORKERS = 2
+    RUN_NAME    = "run_009_efficientnet_b4_focal_loss"
     LR          = 2e-3
-    NUM_WORKERS = 4
-    RUN_NAME    = "run_008_focal_loss"
-    PATIENCE    = 6
+    PATIENCE    = 10    
+    MIN_DELTA   = 0.0005
+    GRACE_PERIOD  = 10
 
     training_logging_metadata = {
         "base_dir": BASE_DIR,
@@ -184,6 +186,8 @@ def main():
         "num_workers": NUM_WORKERS,
         "run_name": RUN_NAME,
         "patience": PATIENCE,
+        "min_delta": MIN_DELTA,
+        "grace_period": GRACE_PERIOD,
     }
 
     print("Experiment started with the following settings:")
@@ -198,7 +202,7 @@ def main():
     train_loader, val_loader, label_map = build_loaders(BASE_DIR, BATCH_SIZE, NUM_WORKERS)
     print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    model = DeepWetlandsModel(model_name='efficientnet_b5', num_classes=len(label_map))
+    model = DeepWetlandsModel(model_name='efficientnet_b4', num_classes=len(label_map))
     model.to(DEVICE)
 
     audio_transform = GPUAudioTransform().to(DEVICE)
@@ -232,7 +236,7 @@ def main():
     scaler = GradScaler("cuda")
 
     logger = TrainingLogger(
-        model_name="efficientnet_b5_focal_loss",
+        model_name="efficientnet_b4_focal_loss",
         label_map=label_map,
         output_dir=f"logs/{RUN_NAME}",
     )
@@ -296,16 +300,24 @@ def main():
 
         if macro_auc > best_auc:
             best_auc = macro_auc
-            epochs_no_gain = 0
             torch.save(model.state_dict(), "models/best_model.pth")
-            print(f"New best model — macro-AUC: {best_auc:.4f}")
-        else:
-            epochs_no_gain += 1
-            print(f"  No gain for {epochs_no_gain}/{PATIENCE} epochs (best AUC: {best_auc:.4f})")
 
-        if epochs_no_gain >= PATIENCE:
-            print(f"\nEarly stopping triggered after {epoch} epochs.")
-            break
+        if epoch <= GRACE_PERIOD:
+            print(f"Grace period active. Patience ignored.")
+        else:
+            if macro_auc >= (best_auc + MIN_DELTA):
+                epochs_no_gain = 0
+                print(f"Significant gain (>{MIN_DELTA}). Patience reset.")
+            else:
+                epochs_no_gain += 1
+                if macro_auc > best_auc:
+                     print(f"Minor gain ({macro_auc:.4f}). Patience NOT reset: {epochs_no_gain}/{PATIENCE}")
+                else:
+                     print(f"No gain for {epochs_no_gain}/{PATIENCE} epochs (best AUC: {best_auc:.4f})")
+
+            if epochs_no_gain >= PATIENCE:
+                print(f"\nEarly stopping triggered after {epoch} epochs.")
+                break
 
     logger.finalize()
     print(f"\nTraining complete. Best macro-AUC: {best_auc:.4f}")
