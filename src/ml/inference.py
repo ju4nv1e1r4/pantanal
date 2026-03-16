@@ -72,23 +72,16 @@ def build_model(num_classes: int,
 
 def load_soundscape(path: Path) -> torch.Tensor:
     import soundfile as sf
-    from math import gcd
-    from scipy.signal import resample_poly
 
     y, sr = sf.read(str(path), dtype="float32", always_2d=False)
-
-    # stereo -> mono
     if y.ndim == 2:
         y = y.mean(axis=1)
 
-    # resample if needed
-    if sr != TARGET_SR:
-        d = gcd(sr, TARGET_SR)
-        y = resample_poly(y.astype("float64"),
-                          up=TARGET_SR // d,
-                          down=sr // d).astype("float32")
+    waveform = torch.from_numpy(y).unsqueeze(0)  
 
-    waveform = torch.from_numpy(y).unsqueeze(0)  # [1, N]
+    if sr != TARGET_SR:
+        waveform = F_audio.resample(waveform, sr, TARGET_SR)
+
     return waveform
 
 def slice_soundscape(
