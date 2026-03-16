@@ -16,10 +16,10 @@ warnings.filterwarnings("ignore")
 
 
 # Kaggle default paths  (overridden by CLI args for local runs)
-KAGGLE_SOUNDSCAPES = Path("/kaggle/input/birdclef-2026/test_soundscapes")
-KAGGLE_MODEL       = Path("/kaggle/input/deepwetlands-model/best_model.pth")
-KAGGLE_TAXONOMY    = Path("/kaggle/input/birdclef-2026/taxonomy.csv")
-KAGGLE_SUBMISSION  = Path("/kaggle/input/birdclef-2026/sample_submission.csv")
+KAGGLE_SOUNDSCAPES = Path("/kaggle/input/competitions/birdclef-2026/test_soundscapes")
+KAGGLE_MODEL       = Path("/kaggle/input/datasets/ju4nv1e1r4/deepwetlands-model/best_model.pth")
+KAGGLE_TAXONOMY    = Path("/kaggle/input/competitions/birdclef-2026/taxonomy.csv")
+KAGGLE_SUBMISSION  = Path("/kaggle/input/competitions/birdclef-2026/sample_submission.csv")
 KAGGLE_OUTPUT      = Path("/kaggle/working/submission.csv")
 
 
