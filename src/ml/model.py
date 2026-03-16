@@ -6,7 +6,7 @@ import timm
 class DeepWetlandsModel(nn.Module):
     def __init__(
         self,
-        model_name: str = 'efficientnet_b0',
+        model_name: str = 'efficientnet_b5',
         num_classes: int = 234,
         pretrained: bool = True,
         in_chans: int = 1,
@@ -39,7 +39,7 @@ class DeepWetlandsModel(nn.Module):
 
 
 if __name__ == "__main__":
-    for arch in ('efficientnet_b0', 'convnext_nano'):
+    for arch in ('efficientnet_b0','efficientnet_b5', 'convnext_nano'):
         model = DeepWetlandsModel(model_name=arch)
         dummy = torch.randn(8, 1, 128, 313)
         out   = model(dummy)

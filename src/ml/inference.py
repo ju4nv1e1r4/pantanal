@@ -50,7 +50,7 @@ amplitude_to_db = torchaudio.transforms.AmplitudeToDB()
 
 
 class DeepWetlandsModel(nn.Module):
-    def __init__(self, model_name: str = "efficientnet_b0",
+    def __init__(self, model_name: str = "efficientnet_b5",
                  num_classes: int = 234):
         super().__init__()
         import timm
@@ -67,7 +67,7 @@ class DeepWetlandsModel(nn.Module):
 
 
 def build_model(num_classes: int,
-                model_name: str = "efficientnet_b0") -> nn.Module:
+                model_name: str = "efficientnet_b5") -> nn.Module:
     return DeepWetlandsModel(model_name=model_name, num_classes=num_classes)
 
 def load_soundscape(path: Path) -> torch.Tensor:

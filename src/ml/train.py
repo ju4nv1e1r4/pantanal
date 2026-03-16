@@ -198,7 +198,7 @@ def main():
     train_loader, val_loader, label_map = build_loaders(BASE_DIR, BATCH_SIZE, NUM_WORKERS)
     print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    model = DeepWetlandsModel(model_name='efficientnet_b0', num_classes=len(label_map))
+    model = DeepWetlandsModel(model_name='efficientnet_b5', num_classes=len(label_map))
     model.to(DEVICE)
 
     audio_transform = GPUAudioTransform().to(DEVICE)
@@ -232,7 +232,7 @@ def main():
     scaler = GradScaler("cuda")
 
     logger = TrainingLogger(
-        model_name="efficientnet_b0_focal_loss",
+        model_name="efficientnet_b5_focal_loss",
         label_map=label_map,
         output_dir=f"logs/{RUN_NAME}",
     )
