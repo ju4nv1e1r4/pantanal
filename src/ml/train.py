@@ -16,6 +16,7 @@ from src.ml.model import DeepWetlandsModel
 from src.ml.training_logger import TrainingLogger
 from src.ml.audio_transform import GPUAudioTransform
 from src.ml.losses import FocalLoss
+from src.data.noise_augmentation import EnvironmentalNoiseAugmentation
 
 
 def mixup_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 0.2):
@@ -33,8 +34,15 @@ def mixup_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 0.2):
     return mixed_x, mixed_y
 
 def train_one_epoch(
-    model, loader, optimizer, criterion, device,
-    audio_transform, scaler, accumulation_steps=2
+    model,
+    loader,
+    optimizer,
+    criterion,
+    device,
+    audio_transform,
+    scaler,
+    accumulation_steps,
+    noise_transform,
 ):
     model.train()
     running_loss = 0.0
@@ -44,6 +52,8 @@ def train_one_epoch(
     for i, (waveforms, targets) in enumerate(pbar):
         waveforms = waveforms.to(device)
         targets   = targets.to(device)
+
+        waveforms = noise_transform(waveforms)
 
         if np.random.rand() < 0.5: # 50% to avoid rare audio destruction
             waveforms, targets = mixup_data(waveforms, targets, alpha=0.2)
@@ -163,10 +173,25 @@ def main():
     LR          = 2e-3
     NUM_WORKERS = 4
     RUN_NAME    = "run_008_focal_loss"
-    PATIENCE    = 30
+    PATIENCE    = 6
+
+    training_logging_metadata = {
+        "base_dir": BASE_DIR,
+        "epochs": EPOCHS,
+        "batch_size": BATCH_SIZE,
+        "accumulation_steps": ACCUM_STEPS,
+        "learning_rate": LR,
+        "num_workers": NUM_WORKERS,
+        "run_name": RUN_NAME,
+        "patience": PATIENCE,
+    }
+
+    print("Experiment started with the following settings:")
+    for k, v in training_logging_metadata.items():
+        print(f"  {k}: {v}")
 
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Training on: {DEVICE}")
+    print(f"Training on: {DEVICE}. LOOK AT ME!")
 
     cudnn.benchmark = True
 
@@ -177,6 +202,12 @@ def main():
     model.to(DEVICE)
 
     audio_transform = GPUAudioTransform().to(DEVICE)
+
+    noise_transform = EnvironmentalNoiseAugmentation(
+        p=0.5,
+        min_snr_db=3.0,
+        max_snr_db=15.0,
+    ).to(DEVICE)
 
     criterion = FocalLoss(gamma=2.0, alpha=0.25)
 
@@ -216,11 +247,22 @@ def main():
         t0 = time.time()
 
         train_loss = train_one_epoch(
-            model, train_loader, optimizer, criterion,
-            DEVICE, audio_transform, scaler, ACCUM_STEPS,
+            model, 
+            train_loader,
+            optimizer,
+            criterion,
+            DEVICE,
+            audio_transform,
+            scaler,
+            ACCUM_STEPS,
+            noise_transform,
         )
         val_loss, val_preds, val_targets = validate(
-            model, val_loader, criterion, DEVICE, audio_transform,
+            model,
+            val_loader,
+            criterion,
+            DEVICE,
+            audio_transform,
         )
         scheduler.step()
 
