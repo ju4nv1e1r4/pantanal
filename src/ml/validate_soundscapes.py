@@ -14,7 +14,7 @@ def main(args):
 
     taxonomy = pd.read_csv(args.taxonomy)
     classes = sorted(taxonomy["primary_label"].unique())
-    
+
     cache_file = "preds_cache.csv"
     print(f"Taxonomy loaded: {len(classes)} classes.")
 
@@ -30,18 +30,18 @@ def main(args):
         if isinstance(state, dict) and "model_state_dict" in state:
             state = state["model_state_dict"]
         model.load_state_dict(state)
-        
+
         print("\nExtracting predictions...")
         dummy_sub = pd.DataFrame(columns=["row_id"] + classes)
-        
+
         df_preds = run_inference(
             soundscape_dir=Path(args.soundscapes),
             model=model,
             label_columns=classes,
-            sample_sub=dummy_sub, 
+            sample_sub=dummy_sub,
             batch_size=args.batch_size,
             local_test=True,
-            overlap=0.0 
+            overlap=0.5
         )
         df_preds.to_csv(cache_file, index=False)
         print(f"Predictions saved to cache file {cache_file}!")
@@ -52,7 +52,7 @@ def main(args):
     col_audio = "filename"
     col_time = "end"
     col_labels = "primary_label"
-    
+
     if "row_id" not in df_true_raw.columns:
         df_true_raw["clean_filename"] = df_true_raw[col_audio].apply(lambda x: Path(str(x).strip()).stem)
 
@@ -65,7 +65,7 @@ def main(args):
 
         df_true_raw["clean_time"] = df_true_raw[col_time].apply(parse_time_to_seconds).astype(str)
         df_true_raw["row_id"] = df_true_raw["clean_filename"] + "_" + df_true_raw["clean_time"]
-    
+
     print(f"\n[DEBUG] Example row_id in Predictions : '{df_preds['row_id'].iloc[0]}'")
     print(f"[DEBUG] Example row_id in Ground Truth  : '{df_true_raw['row_id'].iloc[0]}'")
 
@@ -76,7 +76,7 @@ def main(args):
     for _, row in df_true_raw.iterrows():
         r_id = row["row_id"]
         clean_str = str(row[col_labels]).replace('[', ' ').replace(']', ' ').replace("'", ' ').replace('"', ' ').replace(',', ' ')
-        birds = clean_str.split() 
+        birds = clean_str.split()
         for b in birds:
             if b in classes:
                 df_true.loc[df_true["row_id"] == r_id, b] = 1.0
@@ -87,7 +87,7 @@ def main(args):
         return
     else:
         print(f"Merge complete! {len(df_merged)} common windows found.")
-    
+
     y_pred = df_merged[[c + "_pred" for c in classes]].values
     y_true = df_merged[[c + "_true" for c in classes]].values
 
@@ -105,12 +105,12 @@ def main(args):
 
     print("\n" + "="*50)
     mask = y_true.sum(axis=0) > 0
-    
+
     y_true_present = y_true[:, mask]
     y_pred_present = y_pred[:, mask]
-    
+
     macro_auc = roc_auc_score(y_true_present, y_pred_present, average="macro")
-    
+
     print(f"LOCAL SCORE (Present Classes - Macro-AUC): {macro_auc:.4f}")
     print(f"   (Calculated over the {mask.sum()} classes mapped in the soundscape)")
     print("="*50)
@@ -122,8 +122,8 @@ if __name__ == "__main__":
     parser.add_argument("--labels", default="data/train_soundscapes_labels.csv")
     parser.add_argument("--taxonomy", default="data/taxonomy.csv")
     parser.add_argument("--model", required=True, help="Path to the .pth model")
-    parser.add_argument("--model_name", default="efficientnet_b4", help="Name of the timm architecture")
+    parser.add_argument("--model_name", default="efficientnet_b3", help="Name of the timm architecture")
     parser.add_argument("--batch_size", type=int, default=32)
-    
+
     args = parser.parse_args()
     main(args)

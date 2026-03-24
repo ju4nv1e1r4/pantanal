@@ -59,7 +59,7 @@ COLORS = {
 
 
 class TrainingLogger:
-    def __init__(self, label_map: dict, output_dir: str = "logs/run", model_name = "efficientnet_b4"):
+    def __init__(self, label_map: dict, output_dir: str = "logs/run", model_name = "efficientnet_b3"):
         self.model = model_name
         self.label_map    = label_map
         self.idx_to_label = {v: k for k, v in label_map.items()}
@@ -150,7 +150,7 @@ class TrainingLogger:
             y_true = targets[:, i]
             y_score = preds[:, i]
             if y_true.sum() == 0:
-                continue  # no positives, undefined AUC 
+                continue  # no positives, undefined AUC
             try:
                 auc = roc_auc_score(y_true, y_score)
                 label = self.idx_to_label.get(i, str(i))
@@ -199,7 +199,7 @@ class TrainingLogger:
                 spine.set_edgecolor(COLORS["border"])
 
         fig.tight_layout(pad=2.0)
-        path = self.output_dir / f"{self.model}_loss_curve.png" 
+        path = self.output_dir / f"{self.model}_loss_curve.png"
         fig.savefig(path, dpi=PLOT_DPI, bbox_inches="tight", facecolor=COLORS["bg"])
         plt.close(fig)
         self.log(f"Plot saved on: {path}")

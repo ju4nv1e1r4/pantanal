@@ -50,7 +50,7 @@ amplitude_to_db = torchaudio.transforms.AmplitudeToDB()
 
 
 class DeepWetlandsModel(nn.Module):
-    def __init__(self, model_name: str = "efficientnet_b4",
+    def __init__(self, model_name: str = "efficientnet_b3",
                  num_classes: int = 234):
         super().__init__()
         import timm
@@ -67,7 +67,7 @@ class DeepWetlandsModel(nn.Module):
 
 
 def build_model(num_classes: int,
-                model_name: str = "efficientnet_b4") -> nn.Module:
+                model_name: str = "efficientnet_b3") -> nn.Module:
     return DeepWetlandsModel(model_name=model_name, num_classes=num_classes)
 
 def load_soundscape(path: Path) -> torch.Tensor:
@@ -77,7 +77,7 @@ def load_soundscape(path: Path) -> torch.Tensor:
     if y.ndim == 2:
         y = y.mean(axis=1)
 
-    waveform = torch.from_numpy(y).unsqueeze(0)  
+    waveform = torch.from_numpy(y).unsqueeze(0)
 
     if sr != TARGET_SR:
         waveform = F_audio.resample(waveform, sr, TARGET_SR)
@@ -246,7 +246,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="BirdCLEF+ 2026 inference — generates submission.csv"
     )
-    
+
     parser.add_argument(
         "--soundscapes",
         default=str(KAGGLE_SOUNDSCAPES),
@@ -268,7 +268,7 @@ if __name__ == "__main__":
         default=str(KAGGLE_OUTPUT),
     )
     parser.add_argument(
-        "--batch_size", 
+        "--batch_size",
         type=int,
         default=32,
         help="Windows per batch (reduce if OOM)"

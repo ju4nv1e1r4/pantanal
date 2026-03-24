@@ -1,22 +1,26 @@
 import os
 import time
+
 import numpy as np
 import pandas as pd
 import torch
+import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
-import torch.backends.cudnn as cudnn
-from tqdm import tqdm
 from sklearn.model_selection import StratifiedGroupKFold
+from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
-from torch.amp import autocast, GradScaler
+from tqdm import tqdm
+import warnings
 
 from src.data.data_loader import DeepWetlandsDataset
-from src.ml.model import DeepWetlandsModel
-from src.ml.training_logger import TrainingLogger
+from src.data.noise_augmentation import EnvironmentalNoiseAugmentation
 from src.ml.audio_transform import GPUAudioTransform
 from src.ml.losses import FocalLoss
-from src.data.noise_augmentation import EnvironmentalNoiseAugmentation
+from src.ml.model import DeepWetlandsModel
+from src.ml.training_logger import TrainingLogger
+
+warnings.filterwarnings("ignore")
 
 
 def mixup_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 0.2):
@@ -32,6 +36,7 @@ def mixup_data(x: torch.Tensor, y: torch.Tensor, alpha: float = 0.2):
     mixed_y = lam * y + (1 - lam) * y[index]
 
     return mixed_x, mixed_y
+
 
 def train_one_epoch(
     model,
@@ -51,11 +56,11 @@ def train_one_epoch(
     pbar = tqdm(loader, desc="Training")
     for i, (waveforms, targets) in enumerate(pbar):
         waveforms = waveforms.to(device)
-        targets   = targets.to(device)
+        targets = targets.to(device)
 
         waveforms = noise_transform(waveforms)
 
-        if np.random.rand() < 0.5: # 50% to avoid rare audio destruction
+        if np.random.rand() < 0.5:  # 50% to avoid rare audio destruction
             waveforms, targets = mixup_data(waveforms, targets, alpha=0.2)
 
         with torch.no_grad():
@@ -63,8 +68,8 @@ def train_one_epoch(
 
         with autocast(device_type=device.type, dtype=torch.float16):
             outputs = model(specs)
-            loss    = criterion(outputs, targets)
-            loss    = loss / accumulation_steps
+            loss = criterion(outputs, targets)
+            loss = loss / accumulation_steps
 
         scaler.scale(loss).backward()
 
@@ -79,23 +84,24 @@ def train_one_epoch(
 
     return running_loss / len(loader)
 
+
 def validate(model, loader, criterion, device, audio_transform):
     model.eval()
     running_loss = 0.0
-    all_preds    = []
-    all_targets  = []
+    all_preds = []
+    all_targets = []
 
     with torch.no_grad():
         pbar = tqdm(loader, desc="Validating")
         for waveforms, targets in pbar:
             waveforms = waveforms.to(device)
-            targets   = targets.to(device)
+            targets = targets.to(device)
 
             specs = audio_transform(waveforms, is_train=False)
 
             with autocast(device_type=device.type, dtype=torch.float16):
                 outputs = model(specs)
-                loss    = criterion(outputs, targets)
+                loss = criterion(outputs, targets)
 
             running_loss += loss.item()
             pbar.set_postfix(loss=f"{loss.item():.4f}")
@@ -103,45 +109,49 @@ def validate(model, loader, criterion, device, audio_transform):
             all_preds.append(outputs.float().cpu().numpy())
             all_targets.append(targets.float().cpu().numpy())
 
-    val_preds   = np.concatenate(all_preds,   axis=0)
+    val_preds = np.concatenate(all_preds, axis=0)
     val_targets = np.concatenate(all_targets, axis=0)
 
     return running_loss / len(loader), val_preds, val_targets
 
+
 def build_loaders(base_dir: str, batch_size: int, num_workers: int):
-    df       = pd.read_csv(os.path.join(base_dir, "train.csv"))
+    df = pd.read_csv(os.path.join(base_dir, "train.csv"))
+    df = df[df["rating"] != 0.0].reset_index(drop=True)
     taxonomy = pd.read_csv(os.path.join(base_dir, "taxonomy.csv"))
 
-    classes   = sorted(taxonomy['primary_label'].unique())
+    classes = sorted(taxonomy["primary_label"].unique())
     label_map = {label: i for i, label in enumerate(classes)}
 
-    counts    = df['primary_label'].value_counts()
-    rare_mask = df['primary_label'].isin(counts[counts < 2].index)
-    df_rare   = df[rare_mask].reset_index(drop=True)
+    counts = df["primary_label"].value_counts()
+    rare_mask = df["primary_label"].isin(counts[counts < 2].index)
+    df_rare = df[rare_mask].reset_index(drop=True)
     df_common = df[~rare_mask].reset_index(drop=True)
 
     print(f"Rare species (forced in training): {rare_mask.sum()} samples")
 
     sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
 
-    groups = df_common['author']
-    train_idx, val_idx = next(sgkf.split(df_common, df_common['primary_label'], groups=groups))
-    
+    groups = df_common["author"]
+    train_idx, val_idx = next(
+        sgkf.split(df_common, df_common["primary_label"], groups=groups)
+    )
+
     train_df = df_common.iloc[train_idx].copy()
-    val_df   = df_common.iloc[val_idx].copy()
+    val_df = df_common.iloc[val_idx].copy()
 
     train_df = pd.concat([train_df, df_rare]).reset_index(drop=True)
 
     print(f"Train: {len(train_df)} samples | Val: {len(val_df)} samples")
 
-    data_dir      = os.path.join(base_dir, "train_audio")
+    data_dir = os.path.join(base_dir, "train_audio")
     train_dataset = DeepWetlandsDataset(train_df, data_dir, label_map, is_train=True)
-    val_dataset   = DeepWetlandsDataset(val_df,   data_dir, label_map, is_train=False)
+    val_dataset = DeepWetlandsDataset(val_df, data_dir, label_map, is_train=False)
 
-    class_counts  = train_df['primary_label'].value_counts().to_dict()
-    sample_weights = train_df['primary_label'].map(
-        lambda lbl: 1.0 / class_counts[lbl]
-    ).values
+    class_counts = train_df["primary_label"].value_counts().to_dict()
+    sample_weights = (
+        train_df["primary_label"].map(lambda lbl: 1.0 / class_counts[lbl]).values
+    )
     sampler = torch.utils.data.WeightedRandomSampler(
         weights=torch.tensor(sample_weights, dtype=torch.float),
         num_samples=len(train_dataset),
@@ -165,17 +175,23 @@ def build_loaders(base_dir: str, batch_size: int, num_workers: int):
 
     return train_loader, val_loader, label_map
 
+
 def main():
-    BASE_DIR    = "data"
-    EPOCHS      = 50
-    BATCH_SIZE  = 32
+    BASE_DIR = "data"
+    EPOCHS = 50
+    BATCH_SIZE = 32
     ACCUM_STEPS = 2
     NUM_WORKERS = 2
-    RUN_NAME    = "run_009_efficientnet_b4_focal_loss"
-    LR          = 2e-3
-    PATIENCE    = 10    
-    MIN_DELTA   = 0.0005
-    GRACE_PERIOD  = 10
+    RUN_NAME = "run_009_efficientnet_b3_focal_loss"
+    LR = 2e-3
+    PATIENCE = 10
+    MIN_DELTA = 0.0005
+    GRACE_PERIOD = 10
+
+    df = pd.read_csv(f"{BASE_DIR}/train.csv")
+    original_length = len(df)
+    df = df[df["rating"] != 0.0].reset_index(drop=True)
+    print(f"Rating filter: reduced from {original_length} to {len(df)}")
 
     training_logging_metadata = {
         "base_dir": BASE_DIR,
@@ -199,10 +215,12 @@ def main():
 
     cudnn.benchmark = True
 
-    train_loader, val_loader, label_map = build_loaders(BASE_DIR, BATCH_SIZE, NUM_WORKERS)
+    train_loader, val_loader, label_map = build_loaders(
+        BASE_DIR, BATCH_SIZE, NUM_WORKERS
+    )
     print(f"Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
-    model = DeepWetlandsModel(model_name='efficientnet_b4', num_classes=len(label_map))
+    model = DeepWetlandsModel(model_name="efficientnet_b3", num_classes=len(label_map))
     model.to(DEVICE)
 
     audio_transform = GPUAudioTransform().to(DEVICE)
@@ -215,43 +233,48 @@ def main():
 
     criterion = FocalLoss(gamma=2.0, alpha=0.25)
 
-    backbone_params = [p for n, p in model.named_parameters() if 'head' not in n]
-    head_params     = [p for n, p in model.named_parameters() if 'head'     in n]
+    backbone_params = [p for n, p in model.named_parameters() if "head" not in n]
+    head_params = [p for n, p in model.named_parameters() if "head" in n]
 
-    optimizer = optim.AdamW([
-        {'params': backbone_params, 'lr': LR * 0.1},   # 2e-4
-        {'params': head_params,     'lr': LR},         # 2e-3
-    ], weight_decay=1e-4)
+    optimizer = optim.AdamW(
+        [
+            {"params": backbone_params, "lr": LR * 0.1},  # 2e-4
+            {"params": head_params, "lr": LR},  # 2e-3
+        ],
+        weight_decay=1e-4,
+    )
 
     WARMUP_EPOCHS = 3
 
     def lr_lambda(epoch):
         if epoch < WARMUP_EPOCHS:
-            return (epoch + 1) / WARMUP_EPOCHS   # linear warmup
+            return (epoch + 1) / WARMUP_EPOCHS  # linear warmup
         progress = (epoch - WARMUP_EPOCHS) / max(1, EPOCHS - WARMUP_EPOCHS)
-        return 0.5 * (1.0 + np.cos(np.pi * progress))   # cosine decay
+        return 0.5 * (1.0 + np.cos(np.pi * progress))  # cosine decay
 
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
     scaler = GradScaler("cuda")
 
     logger = TrainingLogger(
-        model_name="efficientnet_b4_focal_loss",
+        model_name="efficientnet_b3_focal_loss",
         label_map=label_map,
         output_dir=f"logs/{RUN_NAME}",
     )
 
     os.makedirs("models", exist_ok=True)
 
-    best_auc      = 0.0
+    best_auc = 0.0
     epochs_no_gain = 0
 
     for epoch in range(1, EPOCHS + 1):
-        print(f"\nEpoch {epoch}/{EPOCHS}  |  lr_backbone={optimizer.param_groups[0]['lr']:.2e}  lr_head={optimizer.param_groups[1]['lr']:.2e}")
+        print(
+            f"\nEpoch {epoch}/{EPOCHS}  |  lr_backbone={optimizer.param_groups[0]['lr']:.2e}  lr_head={optimizer.param_groups[1]['lr']:.2e}"
+        )
         t0 = time.time()
 
         train_loss = train_one_epoch(
-            model, 
+            model,
             train_loader,
             optimizer,
             criterion,
@@ -271,32 +294,39 @@ def main():
         scheduler.step()
 
         epoch_time = time.time() - t0
-        print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Time: {epoch_time:.0f}s")
+        print(
+            f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Time: {epoch_time:.0f}s"
+        )
 
-        logger.log_epoch(epoch, train_loss, val_loss, val_preds, val_targets, epoch_time)
+        logger.log_epoch(
+            epoch, train_loss, val_loss, val_preds, val_targets, epoch_time
+        )
 
         from sklearn.metrics import roc_auc_score
-        import warnings
-        warnings.filterwarnings('ignore')
 
         try:
             mask = val_targets.sum(axis=0) > 0
 
             if mask.sum() > 0:
-                macro_auc = roc_auc_score(val_targets[:, mask], val_preds[:, mask], average='macro')
+                macro_auc = roc_auc_score(
+                    val_targets[:, mask], val_preds[:, mask], average="macro"
+                )
             else:
                 macro_auc = 0.0
         except ValueError:
             macro_auc = 0.0
 
-        torch.save({
-            "epoch":                epoch,
-            "model_state_dict":     model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "train_loss":           train_loss,
-            "val_loss":             val_loss,
-            "macro_auc":            macro_auc,
-        }, f"models/checkpoint_epoch_{epoch:02d}.pth")
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "macro_auc": macro_auc,
+            },
+            f"models/checkpoint_epoch_{epoch:02d}.pth",
+        )
 
         if macro_auc > best_auc:
             best_auc = macro_auc
@@ -311,9 +341,13 @@ def main():
             else:
                 epochs_no_gain += 1
                 if macro_auc > best_auc:
-                     print(f"Minor gain ({macro_auc:.4f}). Patience NOT reset: {epochs_no_gain}/{PATIENCE}")
+                    print(
+                        f"Minor gain ({macro_auc:.4f}). Patience NOT reset: {epochs_no_gain}/{PATIENCE}"
+                    )
                 else:
-                     print(f"No gain for {epochs_no_gain}/{PATIENCE} epochs (best AUC: {best_auc:.4f})")
+                    print(
+                        f"No gain for {epochs_no_gain}/{PATIENCE} epochs (best AUC: {best_auc:.4f})"
+                    )
 
             if epochs_no_gain >= PATIENCE:
                 print(f"\nEarly stopping triggered after {epoch} epochs.")
